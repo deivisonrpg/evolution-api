@@ -127,6 +127,7 @@ import mime from 'mime';
 import NodeCache from 'node-cache';
 import cron from 'node-cron';
 import { release } from 'os';
+import PQueue from 'p-queue';
 import { join } from 'path';
 import P from 'pino';
 import qrcode, { QRCodeToDataURLOptions } from 'qrcode';
@@ -151,6 +152,9 @@ export class BaileysStartupService extends ChannelStartupService {
     this.instance.qrcode = { count: 0 };
 
     this.authStateProvider = new AuthStateProvider(this.providerFiles);
+    this.processQueue.on('active', () => {
+      this.logger.verbose(`Working on item Size: ${this.processQueue.size}  Pending: ${this.processQueue.pending}`);
+    });
   }
 
   private authStateProvider: AuthStateProvider;
@@ -162,6 +166,7 @@ export class BaileysStartupService extends ChannelStartupService {
   public stateConnection: wa.StateConnection = { state: 'close' };
 
   public phoneNumber: string;
+  private processQueue = new PQueue({ concurrency: 1, autoStart: true });
 
   public get connectionStatus() {
     return this.stateConnection;
@@ -1515,12 +1520,12 @@ export class BaileysStartupService extends ChannelStartupService {
 
         if (events['messages.upsert']) {
           const payload = events['messages.upsert'];
-          this.messageHandle['messages.upsert'](payload, settings);
+          this.processQueue.add(() => this.messageHandle['messages.upsert'](payload, settings));
         }
 
         if (events['messages.update']) {
           const payload = events['messages.update'];
-          this.messageHandle['messages.update'](payload, settings);
+          this.processQueue.add(() => this.messageHandle['messages.update'](payload, settings));
         }
 
         if (events['message-receipt.update']) {
@@ -1532,12 +1537,16 @@ export class BaileysStartupService extends ChannelStartupService {
               remotesJidMap[event.key.remoteJid] = event.receipt.readTimestamp;
             }
           }
-
-          await Promise.all(
-            Object.keys(remotesJidMap).map(async (remoteJid) =>
-              this.updateMessagesReadedByTimestamp(remoteJid, remotesJidMap[remoteJid]),
-            ),
-          );
+          (async () => {
+            await this.processQueue.add(
+              async () =>
+                await Promise.all(
+                  Object.keys(remotesJidMap).map(async (remoteJid) =>
+                    this.updateMessagesReadedByTimestamp(remoteJid, remotesJidMap[remoteJid]),
+                  ),
+                ),
+            );
+          })();
         }
 
         if (events['presence.update']) {
@@ -1553,54 +1562,54 @@ export class BaileysStartupService extends ChannelStartupService {
         if (!settings?.groupsIgnore) {
           if (events['groups.upsert']) {
             const payload = events['groups.upsert'];
-            this.groupHandler['groups.upsert'](payload);
+            this.processQueue.add(() => this.groupHandler['groups.upsert'](payload));
           }
 
           if (events['groups.update']) {
             const payload = events['groups.update'];
-            this.groupHandler['groups.update'](payload);
+            this.processQueue.add(() => this.groupHandler['groups.update'](payload));
           }
 
           if (events['group-participants.update']) {
             const payload = events['group-participants.update'];
-            this.groupHandler['group-participants.update'](payload);
+            this.processQueue.add(() => this.groupHandler['group-participants.update'](payload));
           }
         }
 
         if (events['chats.upsert']) {
           const payload = events['chats.upsert'];
-          this.chatHandle['chats.upsert'](payload);
+          this.processQueue.add(() => this.chatHandle['chats.upsert'](payload));
         }
 
         if (events['chats.update']) {
           const payload = events['chats.update'];
-          this.chatHandle['chats.update'](payload);
+          this.processQueue.add(() => this.chatHandle['chats.update'](payload));
         }
 
         if (events['chats.delete']) {
           const payload = events['chats.delete'];
-          this.chatHandle['chats.delete'](payload);
+          this.processQueue.add(() => this.chatHandle['chats.delete'](payload));
         }
 
         if (events['contacts.upsert']) {
           const payload = events['contacts.upsert'];
-          this.contactHandle['contacts.upsert'](payload);
+          this.processQueue.add(() => this.contactHandle['contacts.upsert'](payload));
         }
 
         if (events['contacts.update']) {
           const payload = events['contacts.update'];
-          this.contactHandle['contacts.update'](payload);
+          this.processQueue.add(() => this.contactHandle['contacts.update'](payload));
         }
 
         if (events[Events.LABELS_ASSOCIATION]) {
           const payload = events[Events.LABELS_ASSOCIATION];
-          this.labelHandle[Events.LABELS_ASSOCIATION](payload, database);
+          this.processQueue.add(() => this.labelHandle[Events.LABELS_ASSOCIATION](payload, database));
           return;
         }
 
         if (events[Events.LABELS_EDIT]) {
           const payload = events[Events.LABELS_EDIT];
-          this.labelHandle[Events.LABELS_EDIT](payload);
+          this.processQueue.add(() => this.labelHandle[Events.LABELS_EDIT](payload));
           return;
         }
       }
