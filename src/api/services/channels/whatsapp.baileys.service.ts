@@ -1029,7 +1029,7 @@ export class BaileysStartupService extends ChannelStartupService {
 
         await this.contactHandle['contacts.upsert'](
           contacts
-            .filter((c) => !!c.notify ?? !!c.name)
+            .filter((c) => !!c.notify || !!c.name)
             .map((c) => ({
               id: c.id,
               name: c.name ?? c.notify,
