@@ -17,6 +17,7 @@ import compression from 'compression';
 import cors from 'cors';
 import express, { json, NextFunction, Request, Response, urlencoded } from 'express';
 import { join } from 'path';
+import { log } from 'console';
 
 function initWA() {
   waMonitor.loadInstance();
@@ -149,6 +150,7 @@ async function bootstrap() {
   }
 
   server.listen(httpServer.PORT, () => logger.log(httpServer.TYPE.toUpperCase() + ' - ON: ' + httpServer.PORT));
+  logger.info('Server URL: ' + httpServer.URL);
 
   initWA();
 
